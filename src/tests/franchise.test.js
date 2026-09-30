@@ -84,6 +84,26 @@ test('delete franchise', async () => {
   expect(listRes.body.franchises).toEqual([]);
 });
 
+test('delete franchise as non-admin forbidden', async () => {
+  const franchise = await createFranchise();
+  const dinerRes = await request(app).delete(`/api/franchise/${franchise.id}`).set('Authorization', `Bearer ${diner.token}`);
+  expect(dinerRes.status).toBe(403);
+  const franchiseeRes = await request(app).delete(`/api/franchise/${franchise.id}`).set('Authorization', `Bearer ${franchisee.token}`);
+  expect(franchiseeRes.status).toBe(403);
+
+  const listRes = await request(app).get(`/api/franchise?name=${franchise.name}`);
+  expect(listRes.body.franchises).toHaveLength(1);
+});
+
+test('delete franchise unauthorized', async () => {
+  const franchise = await createFranchise();
+  const deleteRes = await request(app).delete(`/api/franchise/${franchise.id}`);
+  expect(deleteRes.status).toBe(401);
+
+  const listRes = await request(app).get(`/api/franchise?name=${franchise.name}`);
+  expect(listRes.body.franchises).toHaveLength(1);
+});
+
 test('create store as franchisee', async () => {
   const franchise = await createFranchise();
   const storeRes = await createStore(franchise.id, franchisee.token);
