@@ -52,19 +52,77 @@ test('update other user as admin', async () => {
   expect(updateRes.body.user).toMatchObject({ id: user.id, name: updated.name, email: updated.email });
 });
 
-test('delete user', async () => {
-  const deleteRes = await request(app).delete(`/api/user/${diner.user.id}`).set('Authorization', `Bearer ${diner.token}`);
-  expect(deleteRes.status).toBe(200);
-  expect(deleteRes.body.message).toBe('not implemented');
+test('delete user as non-admin forbidden', async () => {
+  const { user, token } = await registerUser();
+  const selfDeleteRes = await request(app).delete(`/api/user/${user.id}`).set('Authorization', `Bearer ${token}`);
+  expect(selfDeleteRes.status).toBe(403);
+
+  const otherDeleteRes = await request(app).delete(`/api/user/${user.id}`).set('Authorization', `Bearer ${diner.token}`);
+  expect(otherDeleteRes.status).toBe(403);
+
+  const loginRes = await request(app).put('/api/auth').send({ email: user.email, password: user.password });
+  expect(loginRes.status).toBe(200);
 });
 
-test('list users', async () => {
-  const listRes = await request(app).get('/api/user').set('Authorization', `Bearer ${admin.token}`);
-  expect(listRes.status).toBe(200);
-  expect(listRes.body).toMatchObject({ message: 'not implemented', users: [], more: false });
+test('delete user as admin', async () => {
+  const { user } = await registerUser();
+  const deleteRes = await request(app).delete(`/api/user/${user.id}`).set('Authorization', `Bearer ${admin.token}`);
+  expect(deleteRes.status).toBe(200);
+
+  const loginRes = await request(app).put('/api/auth').send({ email: user.email, password: user.password });
+  expect(loginRes.status).toBe(404);
 });
 
 test('list users unauthorized', async () => {
-  const listRes = await request(app).get('/api/user');
-  expect(listRes.status).toBe(401);
+  const listUsersRes = await request(app).get('/api/user');
+  expect(listUsersRes.status).toBe(401);
 });
+
+test('list users as non-admin forbidden', async () => {
+  const listUsersRes = await request(app).get('/api/user').set('Authorization', `Bearer ${diner.token}`);
+  expect(listUsersRes.status).toBe(403);
+});
+
+test('list users', async () => {
+  const listUsersRes = await request(app).get('/api/user').set('Authorization', `Bearer ${admin.token}`);
+  expect(listUsersRes.status).toBe(200);
+  expect(Array.isArray(listUsersRes.body.users)).toBe(true);
+  expect(typeof listUsersRes.body.more).toBe('boolean');
+  for (const user of listUsersRes.body.users) {
+    expect(user).toHaveProperty('id');
+    expect(user).toHaveProperty('name');
+    expect(user).toHaveProperty('email');
+    expect(Array.isArray(user.roles)).toBe(true);
+    expect(user).not.toHaveProperty('password');
+  }
+});
+
+test('list users filtered by name', async () => {
+  const name = randomName();
+  const user = { name, email: randomName() + '@test.com', password: 'a' };
+  const registerRes = await request(app).post('/api/auth').send(user);
+  expect(registerRes.status).toBe(200);
+
+  const listUsersRes = await request(app).get(`/api/user?name=${name}`).set('Authorization', `Bearer ${admin.token}`);
+  expect(listUsersRes.status).toBe(200);
+  expect(listUsersRes.body.users).toEqual([{ id: registerRes.body.user.id, name, email: user.email, roles: [{ role: 'diner' }] }]);
+  expect(listUsersRes.body.more).toBe(false);
+});
+
+test('list users paginated', async () => {
+  const prefix = randomName();
+  for (let i = 0; i < 3; i++) {
+    await request(app).post('/api/auth').send({ name: `${prefix}${i}`, email: randomName() + '@test.com', password: 'a' });
+  }
+
+  const page0 = await request(app).get(`/api/user?page=0&limit=2&name=${prefix}*`).set('Authorization', `Bearer ${admin.token}`);
+  expect(page0.status).toBe(200);
+  expect(page0.body.users.map((u) => u.name)).toEqual([`${prefix}0`, `${prefix}1`]);
+  expect(page0.body.more).toBe(true);
+
+  const page1 = await request(app).get(`/api/user?page=1&limit=2&name=${prefix}*`).set('Authorization', `Bearer ${admin.token}`);
+  expect(page1.status).toBe(200);
+  expect(page1.body.users.map((u) => u.name)).toEqual([`${prefix}2`]);
+  expect(page1.body.more).toBe(false);
+});
+``
