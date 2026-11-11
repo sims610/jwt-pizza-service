@@ -133,4 +133,32 @@ jobs:
       run: |
         aws ecs update-service --cluster jwt-pizza-service --service jwt-pizza-service --force-new-deployment
 
-        
+  release:
+    needs:
+      - build
+      - deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create Release
+        uses: ncipollo/release-action@2c591bcc8ecdcd2db72b97d6147f871fcd833ba5
+        env:
+          version: ${{needs.build.outputs.version}}
+        with:
+          tag: version-${{ env.version }}
+          name: Version ${{ env.version }}
+          makeLatest: true
+          body: |
+            ## 🚀 Changes
+
+            ${{ github.event.head_commit.message }}
+
+            **commit**: ${{ github.sha }}
+
+      - name: Annotate deployment in Grafana
+        run: |
+          curl -s -X POST https://greenlamb352.grafana.net/api/annotations \
+          -H "Authorization: Bearer ${{ secrets.GRAFANA_ACCESS_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d '{"dashboardUID":"nsl2slh", "panelId":1, "tags":["backend","production", "jwt-pizza"], "text":"Version '"$version"' deployed" }'
