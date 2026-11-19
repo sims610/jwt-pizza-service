@@ -4,6 +4,7 @@ const { Role, DB } = require('../database/database.js');
 const { authRouter } = require('./authRouter.js');
 const { asyncHandler, StatusCodeError } = require('../endpointHelper.js');
 const metrics = require('../metrics.js');
+const logger = require('../logger.js');
 
 const orderRouter = express.Router();
 
@@ -86,12 +87,19 @@ orderRouter.post(
       order = await DB.addDinerOrder(req.user, orderReq);
       const factoryStart = performance.now();
       try {
-        r = await fetch(`${config.factory.url}/api/order`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', authorization: `Bearer ${config.factory.apiKey}` },
-          body: JSON.stringify({ diner: { id: req.user.id, name: req.user.name, email: req.user.email }, order }),
-        });
-        j = await r.json();
+        const factoryReq = { diner: { id: req.user.id, name: req.user.name, email: req.user.email }, order };
+        try {
+          r = await fetch(`${config.factory.url}/api/order`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', authorization: `Bearer ${config.factory.apiKey}` },
+            body: JSON.stringify(factoryReq),
+          });
+          j = await r.json();
+          logger.factoryLogger(factoryReq, j, r.ok, r.status);
+        } catch (error) {
+          logger.factoryLogger(factoryReq, { error: error.message }, false, r?.status);
+          throw error;
+        }
       } finally {
         metrics.pizzaLatency(performance.now() - factoryStart);
       }

@@ -87,3 +87,33 @@ test('get orders unauthorized', async () => {
   const ordersRes = await request(app).get('/api/order');
   expect(ordersRes.status).toBe(401);
 });
+
+describe('factory logging', () => {
+  const logger = require('../logger');
+  const orderReq = () => ({ franchiseId: 1, storeId: 1, items: [{ menuId: menuItem.id, description: menuItem.title, price: menuItem.price }] });
+  const factoryLogs = (spy) => spy.mock.calls.filter((c) => c[1] === 'factory');
+
+  test('logs factory request and response with the user', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ reportUrl: 'http://report', jwt: 'factory.jwt.token' }) });
+    const logSpy = jest.spyOn(logger, 'log');
+    await request(app).post('/api/order').set('Authorization', `Bearer ${diner.token}`).send(orderReq());
+
+    const [[level, , data]] = factoryLogs(logSpy);
+    expect(level).toBe('info');
+    expect(data.user).toEqual({ id: diner.user.id, email: diner.user.email });
+    expect(data.statusCode).toBe(200);
+    expect(JSON.parse(data.reqBody)).toMatchObject({ diner: { id: diner.user.id }, order: orderReq() });
+    expect(JSON.parse(data.resBody)).toEqual({ reportUrl: 'http://report', jwt: 'factory.jwt.token' });
+  });
+
+  test('logs an error when the factory call throws', async () => {
+    jest.spyOn(global, 'fetch').mockRejectedValue(new Error('factory down'));
+    const logSpy = jest.spyOn(logger, 'log');
+    const res = await request(app).post('/api/order').set('Authorization', `Bearer ${diner.token}`).send(orderReq());
+
+    expect(res.status).toBe(500);
+    const [[level, , data]] = factoryLogs(logSpy);
+    expect(level).toBe('error');
+    expect(data.resBody).toContain('factory down');
+  });
+});

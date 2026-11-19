@@ -4,6 +4,7 @@ const config = require('../config.js');
 const { StatusCodeError } = require('../endpointHelper.js');
 const { Role } = require('../model/model.js');
 const dbModel = require('./dbModel.js');
+const logger = require('../logger.js');
 class DB {
   constructor() {
     this.initialized = this.initializeDatabase();
@@ -78,20 +79,24 @@ class DB {
   async updateUser(userId, name, email, password) {
     const connection = await this.getConnection();
     try {
-      const params = [];
+      // Placeholders keep values out of the SQL text, so the password hash never
+      // shows up in the DB logs (and user input can't inject SQL).
+      const setClauses = [];
+      const values = [];
       if (password) {
-        const hashedPassword = await bcrypt.hash(password, 10);
-        params.push(`password='${hashedPassword}'`);
+        setClauses.push('password=?');
+        values.push(await bcrypt.hash(password, 10));
       }
       if (email) {
-        params.push(`email='${email}'`);
+        setClauses.push('email=?');
+        values.push(email);
       }
       if (name) {
-        params.push(`name='${name}'`);
+        setClauses.push('name=?');
+        values.push(name);
       }
-      if (params.length > 0) {
-        const query = `UPDATE user SET ${params.join(', ')} WHERE id=${userId}`;
-        await this.query(connection, query);
+      if (setClauses.length > 0) {
+        await this.query(connection, `UPDATE user SET ${setClauses.join(', ')} WHERE id=?`, [...values, userId]);
       }
       return this.getUser(email, password);
     } finally {
@@ -337,6 +342,7 @@ class DB {
   }
 
   async query(connection, sql, params) {
+    logger.dbLogger(sql);
     const [results] = await connection.execute(sql, params);
     return results;
   }
