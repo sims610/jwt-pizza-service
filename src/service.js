@@ -4,7 +4,6 @@ const orderRouter = require('./routes/orderRouter.js');
 const franchiseRouter = require('./routes/franchiseRouter.js');
 const userRouter = require('./routes/userRouter.js');
 const version = require('./version.json');
-const config = require('./config.js');
 const metrics = require('./metrics.js');
 const logger = require('./logger.js');
 
@@ -33,7 +32,6 @@ apiRouter.use('/docs', (req, res) => {
   res.json({
     version: version.version,
     endpoints: [...authRouter.docs, ...userRouter.docs, ...orderRouter.docs, ...franchiseRouter.docs],
-    config: { factory: config.factory.url, db: config.db.connection.host },
   });
 });
 
@@ -53,7 +51,9 @@ app.use('*', (req, res) => {
 // Default error handler for all exceptions and errors.
 app.use((err, req, res, next) => {
   logger.unhandledErrorLogger(err, req);
-  res.status(err.statusCode ?? 500).json({ message: err.message, stack: err.stack });
+  // The stack goes to the logs only; never send internals to the client.
+  const statusCode = err.statusCode ?? 500;
+  res.status(statusCode).json({ message: statusCode < 500 ? err.message : 'internal server error' });
   next();
 });
 
