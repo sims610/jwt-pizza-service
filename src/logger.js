@@ -21,6 +21,10 @@ class Logger {
     const send = res.send;
     res.send = (resBody) => {
       const logData = {
+        // Behind a proxy/load balancer req.ip is the proxy, so prefer the
+        // original client address from X-Forwarded-For when present.
+        ip: req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip,
+        userAgent: req.headers['user-agent'],
         authorized: !!req.headers.authorization,
         user: this.currentUser(),
         method: req.method,
