@@ -1,6 +1,16 @@
 const request = require('supertest');
 const app = require('../service');
 const metrics = require('../metrics');
+const { randomName, createAdminUser } = require('./testUtils');
+
+// CI starts with an empty database, so tests can't assume menu item 1 exists.
+// Create a real menu item and return its id.
+async function createMenuItem() {
+  const admin = await createAdminUser();
+  const newItem = { title: randomName(), description: 'metrics test pizza', image: 'pizza1.png', price: 0.05 };
+  const res = await request(app).put('/api/order/menu').set('Authorization', `Bearer ${admin.token}`).send(newItem);
+  return res.body.find((item) => item.title === newItem.title).id;
+}
 
 function requestCount(method) {
   const [httpRequests] = metrics.collectMetrics();
@@ -121,21 +131,22 @@ describe('pizza metrics', () => {
   }
 
   let token;
+  let orderReq;
   beforeAll(async () => {
     const { registerUser } = require('./testUtils');
     ({ token } = await registerUser());
+    const menuId = await createMenuItem();
+    orderReq = {
+      franchiseId: 1,
+      storeId: 1,
+      items: [
+        { menuId, description: 'Veggie', price: 0.05 },
+        { menuId, description: 'Veggie', price: 0.0038 },
+      ],
+    };
   });
 
   afterEach(() => jest.restoreAllMocks());
-
-  const orderReq = {
-    franchiseId: 1,
-    storeId: 1,
-    items: [
-      { menuId: 1, description: 'Veggie', price: 0.05 },
-      { menuId: 1, description: 'Veggie', price: 0.0038 },
-    ],
-  };
 
   test('successful order counts pizzas sold and revenue', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ reportUrl: 'r', jwt: 'j' }) });
@@ -193,7 +204,8 @@ describe('latency metrics', () => {
   test('pizza creation latency times the factory call, including failures', async () => {
     const { registerUser } = require('./testUtils');
     const { token } = await registerUser();
-    const orderReq = { franchiseId: 1, storeId: 1, items: [{ menuId: 1, description: 'Veggie', price: 0.05 }] };
+    const menuId = await createMenuItem();
+    const orderReq = { franchiseId: 1, storeId: 1, items: [{ menuId, description: 'Veggie', price: 0.05 }] };
     const [ms, count] = [value('pizza_creation_latency_ms'), value('pizza_creation_latency_count')];
 
     jest.spyOn(global, 'fetch').mockImplementation(
